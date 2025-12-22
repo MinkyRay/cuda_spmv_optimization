@@ -1,58 +1,52 @@
+
+// 封装测试逻辑，方便在循环中调用
 #include <cuda_runtime.h>
 #include <iostream>
 #include <vector>
 #include <iomanip>
+#include <cmath>
 
+// --- Kernel 保持不变 ---
 __global__ void spmv_csr_vector_kernel(
-    int num_rows, 
-    int *row_ptr, 
-    int *col_indices, 
-    float *values, 
-    float *x, 
-    float *y
-){
-
+    int num_rows, int *row_ptr, int *col_indices, 
+    float *values, float *x, float *y
+) {
     int thread_id = blockDim.x * blockIdx.x + threadIdx.x;
     int warp_id = thread_id / 32;  
     int lane_id = thread_id % 32;  
 
-
     int row = warp_id;
-    
-    if (row < num_rows){
+    if (row < num_rows) {
         int start = row_ptr[row];
         int end = row_ptr[row + 1];
         float sum = 0.0f;
 
-
-        for (int i = start + lane_id; i < end; i += 32){
+        for (int i = start + lane_id; i < end; i += 32) {
             sum += values[i] * x[col_indices[i]];
         }
 
-
+        // Warp Shuffle Reduction
         for (int offset = 16; offset > 0; offset /= 2) {
             sum += __shfl_down_sync(0xffffffff, sum, offset);
         }
 
-
-        if (lane_id == 0){
+        if (lane_id == 0) {
             y[row] = sum;
         }
     }
 }
 
-int main() {
-
-    int M = 10000;          
-    int N = 10000;          
-    int nnz_per_row = 32;   
+// --- 自动化的 Benchmark 函数 ---
+void run_vector_benchmark(int M, int nnz_per_row) {
+    int N = M;
     int NNZ = M * nnz_per_row;
 
+    // 1. 数据准备 (Host)
     std::vector<int> h_row_ptr(M + 1);
     std::vector<int> h_col_indices(NNZ);
     std::vector<float> h_values(NNZ);
     std::vector<float> h_x(N, 1.0f);
-    std::vector<float> h_y(M, 0.0f);
+    std::vector<float> h_y_gpu(M, 0.0f);
 
     for (int i = 0; i < M; i++) {
         h_row_ptr[i] = i * nnz_per_row;
@@ -63,6 +57,7 @@ int main() {
     }
     h_row_ptr[M] = NNZ;
 
+    // 2. 数据准备 (Device)
     int *d_row_ptr, *d_col_indices;
     float *d_values, *d_x, *d_y;
     cudaMalloc(&d_row_ptr, (M + 1) * sizeof(int));
@@ -76,33 +71,66 @@ int main() {
     cudaMemcpy(d_values, h_values.data(), NNZ * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_x, h_x.data(), N * sizeof(float), cudaMemcpyHostToDevice);
 
+    // 3. 执行配置 (关键修正点)
+    int blockSize = 256; 
+    // 每个 Block 处理 (256 / 32) = 8 行
+    // 因此总 Block 数应为 (M + 8 - 1) / 8
+    int rowsPerBlock = blockSize / 32;
+    int gridSize = (M + rowsPerBlock - 1) / rowsPerBlock;
+
+    // 4. 预热 (Warm-up)
+    for (int i = 0; i < 10; i++) {
+        spmv_csr_vector_kernel<<<gridSize, blockSize>>>(M, d_row_ptr, d_col_indices, d_values, d_x, d_y);
+    }
+    cudaDeviceSynchronize();
+
+    // 5. 正式计时
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     cudaEventRecord(start);
 
-
-    int threadsPerBlock = 128; 
-    int totalThreads = M * 32; 
-    int gridSize = (totalThreads + threadsPerBlock - 1) / threadsPerBlock;
-
-    spmv_csr_vector_kernel<<<gridSize, threadsPerBlock>>>(M, d_row_ptr, d_col_indices, d_values, d_x, d_y);
+    const int iterations = 100;
+    for (int i = 0; i < iterations; i++) {
+        spmv_csr_vector_kernel<<<gridSize, blockSize>>>(M, d_row_ptr, d_col_indices, d_values, d_x, d_y);
+    }
 
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
-    float ms = 0;
-    cudaEventElapsedTime(&ms, start, stop);
+    float ms_total;
+    cudaEventElapsedTime(&ms_total, start, stop);
+    float ms_avg = ms_total / iterations;
 
-    double gflops = (2.0 * NNZ) / (ms * 1e6);
+    // 6. 正确性验证 (PhD 必备步骤)
+    cudaMemcpy(h_y_gpu.data(), d_y, M * sizeof(float), cudaMemcpyDeviceToHost);
+    bool pass = true;
+    for(int i = 0; i < M; i++) {
+        if (std::abs(h_y_gpu[i] - (float)nnz_per_row) > 1e-3) { // 矩阵全为 1，x全为 1，结果应等于 nnz_per_row
+            pass = false;
+            break;
+        }
+    }
+
+    // 7. 性能统计
+    double gflops = (2.0 * NNZ) / (ms_avg * 1e6);
     double bytes = (double)((M + 1 + NNZ) * sizeof(int) + (NNZ + N + M) * sizeof(float));
-    double bandwidth = bytes / (ms * 1e6);
+    double bandwidth = bytes / (ms_avg * 1e6);
 
-    std::cout << "--- Vector CSR Results ---" << std::endl;
-    std::cout << "Time: " << ms << " ms" << std::endl;
-    std::cout << "Throughput: " << gflops << " GFLOPS" << std::endl;
-    std::cout << "Effective Bandwidth: " << bandwidth << " GB/s" << std::endl;
+    std::cout << std::setw(8) << M << ", " 
+              << std::setw(10) << ms_avg << ", " 
+              << std::setw(10) << gflops << ", " 
+              << std::setw(10) << bandwidth << (pass ? " [PASS]" : " [FAIL]") << std::endl;
 
-    cudaFree(d_row_ptr); cudaFree(d_col_indices);
-    cudaFree(d_values); cudaFree(d_x); cudaFree(d_y);
+    cudaFree(d_row_ptr); cudaFree(d_col_indices); cudaFree(d_values); cudaFree(d_x); cudaFree(d_y);
+}
+
+int main() {
+    std::cout << "--- Vector CSR Sensitivity Analysis ---" << std::endl;
+    std::cout << "M_Size,   Avg_Time(ms),  GFLOPS,   Bandwidth(GB/s)" << std::endl;
+    
+    std::vector<int> test_sizes = {10000, 20000, 40000, 80000, 160000, 320000};
+    for (int M : test_sizes) {
+        run_vector_benchmark(M, 32);
+    }
     return 0;
 }
