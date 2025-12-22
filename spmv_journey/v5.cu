@@ -143,7 +143,7 @@ int main() {
     cudaEventElapsedTime(&ms, start, stop);
     float avg_ms = ms / 50.0f;
 
-    // 结果验证
+
     cudaMemcpy(h_y_gpu.data(), d_y, M * sizeof(float), cudaMemcpyDeviceToHost);
     spmv_cpu(M, h_row_ptr.data(), h_col_indices.data(), h_values.data(), h_x.data(), h_y_cpu.data());
 
