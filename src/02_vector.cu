@@ -1,12 +1,10 @@
-
-// 封装测试逻辑，方便在循环中调用
 #include <cuda_runtime.h>
 #include <iostream>
 #include <vector>
 #include <iomanip>
 #include <cmath>
 
-// --- Kernel 保持不变 ---
+
 __global__ void spmv_csr_vector_kernel(
     int num_rows, int *row_ptr, int *col_indices, 
     float *values, float *x, float *y
@@ -36,12 +34,12 @@ __global__ void spmv_csr_vector_kernel(
     }
 }
 
-// --- 自动化的 Benchmark 函数 ---
+
 void run_vector_benchmark(int M, int nnz_per_row) {
     int N = M;
     int NNZ = M * nnz_per_row;
 
-    // 1. 数据准备 (Host)
+
     std::vector<int> h_row_ptr(M + 1);
     std::vector<int> h_col_indices(NNZ);
     std::vector<float> h_values(NNZ);
@@ -57,7 +55,7 @@ void run_vector_benchmark(int M, int nnz_per_row) {
     }
     h_row_ptr[M] = NNZ;
 
-    // 2. 数据准备 (Device)
+
     int *d_row_ptr, *d_col_indices;
     float *d_values, *d_x, *d_y;
     cudaMalloc(&d_row_ptr, (M + 1) * sizeof(int));
@@ -71,20 +69,20 @@ void run_vector_benchmark(int M, int nnz_per_row) {
     cudaMemcpy(d_values, h_values.data(), NNZ * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_x, h_x.data(), N * sizeof(float), cudaMemcpyHostToDevice);
 
-    // 3. 执行配置 (关键修正点)
+
     int blockSize = 256; 
     // 每个 Block 处理 (256 / 32) = 8 行
     // 因此总 Block 数应为 (M + 8 - 1) / 8
     int rowsPerBlock = blockSize / 32;
     int gridSize = (M + rowsPerBlock - 1) / rowsPerBlock;
 
-    // 4. 预热 (Warm-up)
+    // Warm-up
     for (int i = 0; i < 10; i++) {
         spmv_csr_vector_kernel<<<gridSize, blockSize>>>(M, d_row_ptr, d_col_indices, d_values, d_x, d_y);
     }
     cudaDeviceSynchronize();
 
-    // 5. 正式计时
+
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
@@ -101,7 +99,7 @@ void run_vector_benchmark(int M, int nnz_per_row) {
     cudaEventElapsedTime(&ms_total, start, stop);
     float ms_avg = ms_total / iterations;
 
-    // 6. 正确性验证 (PhD 必备步骤)
+
     cudaMemcpy(h_y_gpu.data(), d_y, M * sizeof(float), cudaMemcpyDeviceToHost);
     bool pass = true;
     for(int i = 0; i < M; i++) {
@@ -111,7 +109,7 @@ void run_vector_benchmark(int M, int nnz_per_row) {
         }
     }
 
-    // 7. 性能统计
+
     double gflops = (2.0 * NNZ) / (ms_avg * 1e6);
     double bytes = (double)((M + 1 + NNZ) * sizeof(int) + (NNZ + N + M) * sizeof(float));
     double bandwidth = bytes / (ms_avg * 1e6);
