@@ -84,5 +84,5 @@ Based on empirical data, the following heuristic should be used for kernel selec
 | $M \times L > 32MB$ | **Vector** | DRAM Bandwidth Bound |
 
 ---
-**Author:** [Your Name/GitHub Handle]  
+**Author:** Mingyu Lei  
 **Hardware:** NVIDIA GeForce RTX 4050 Laptop GPU (Ada Lovelace, 6GB VRAM, 96-bit bus)
