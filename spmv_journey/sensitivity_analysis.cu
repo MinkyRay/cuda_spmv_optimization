@@ -46,7 +46,7 @@ struct Result {
     double bandwidth;
 };
 
-// 核心测试逻辑
+
 Result run_test(int M, int L, bool use_vector) {
     int N = M;
     int NNZ = M * L;
