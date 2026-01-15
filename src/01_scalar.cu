@@ -30,10 +30,9 @@ __global__ void spmv_csr_scalar_kernel(
 
 
 void run_benchmark(int M, int nnz_per_row) {
-    int N = M; // 保持方阵
+    int N = M; 
     int NNZ = M * nnz_per_row;
 
-    // --- 数据准备 ---
     std::vector<int> h_row_ptr(M + 1);
     std::vector<int> h_col_indices(NNZ);
     std::vector<float> h_values(NNZ);
