@@ -28,9 +28,7 @@ __global__ void spmv_csr_vector_kernel(
             sum += __shfl_down_sync(0xffffffff, sum, offset);
         }
 
-        if (lane_id == 0) {
-            y[row] = sum;
-        }
+        if (lane_id == 0) y[row] = sum;
     }
 }
 
@@ -71,8 +69,6 @@ void run_vector_benchmark(int M, int nnz_per_row) {
 
 
     int blockSize = 256; 
-    // 每个 Block 处理 (256 / 32) = 8 行
-    // 因此总 Block 数应为 (M + 8 - 1) / 8
     int rowsPerBlock = blockSize / 32;
     int gridSize = (M + rowsPerBlock - 1) / rowsPerBlock;
 
@@ -103,7 +99,7 @@ void run_vector_benchmark(int M, int nnz_per_row) {
     cudaMemcpy(h_y_gpu.data(), d_y, M * sizeof(float), cudaMemcpyDeviceToHost);
     bool pass = true;
     for(int i = 0; i < M; i++) {
-        if (std::abs(h_y_gpu[i] - (float)nnz_per_row) > 1e-3) { // 矩阵全为 1，x全为 1，结果应等于 nnz_per_row
+        if (std::abs(h_y_gpu[i] - (float)nnz_per_row) > 1e-3) {
             pass = false;
             break;
         }
