@@ -12,7 +12,6 @@
 template<int SWS>
 __global__ void spmv_subwarp_kernel(int num_rows, int *row_ptr, int *col_indices, float *values, float *x, float *y) {
     int thread_id = blockDim.x * blockIdx.x + threadIdx.x;
-    int lane_id = thread_id % 32;
     int sub_warp_lane_id = lane_id % SWS;
     int row = thread_id / SWS;
 
@@ -87,7 +86,7 @@ int main() {
         std::vector<int> h_col_indices(NNZ);
         for (int i = 0; i < M; i++) {
             h_row_ptr[i] = i * row_len;
-            for (int j = 0; j < row_len; j++) h_col_indices[i * row_len + j] = rand() % M; // 随机列索引压力测试
+            for (int j = 0; j < row_len; j++) h_col_indices[i * row_len + j] = rand() % M; 
         }
         h_row_ptr[M] = NNZ;
 
