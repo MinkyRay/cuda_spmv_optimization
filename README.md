@@ -75,7 +75,7 @@ For matrices with skewed row distributions (e.g., social networks), static row-m
 ### Build & Run
 ```bash
 # Clone the repository
-git clone [https://github.com/MinkyRay/cuda_spmv_optimization.git](https://github.com/MinkyRay/cuda_spmv_optimization.git)
+git clone https://github.com/MinkyRay/cuda_spmv_optimization.git
 cd cuda_spmv_optimization
 
 # Build
@@ -85,3 +85,4 @@ make -j
 
 # Run sensitivity benchmarks
 ./bin/spmv_bench --kernel subwarp --L 8
+
