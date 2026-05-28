@@ -5,9 +5,9 @@
 #include <cmath>
 #include <iomanip>
 
-#define TILE_SIZE 1024  // 每一个 Tile 的大小，建议为 1024 (占用 4KB Shared Memory)
+#define TILE_SIZE 1024
 
-// --- V5 Kernel: 基于 Warp 的分块共享内存实现 ---
+
 __global__ void spmv_csr_tiled_shared_kernel(
     int num_rows,
     int num_cols,
@@ -17,7 +17,7 @@ __global__ void spmv_csr_tiled_shared_kernel(
     float *x,
     float *y
 ) {
-    // 静态申请共享内存用于缓存向量 x 的分段
+
     __shared__ float x_shared[TILE_SIZE];
 
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -27,11 +27,11 @@ __global__ void spmv_csr_tiled_shared_kernel(
 
     float row_sum = 0.0f;
 
-    // 外层循环：按列对整个向量空间进行切片 (Tiling)
+
     for (int tile_start = 0; tile_start < num_cols; tile_start += TILE_SIZE) {
         
-        // 1. 协作搬运 (Collaborative Loading)
-        // Block 内所有线程一起把 Global Memory 的 x 切片搬到 Shared Memory
+
+
         for (int i = threadIdx.x; i < TILE_SIZE; i += blockDim.x) {
             int global_x_idx = tile_start + i;
             if (global_x_idx < num_cols) {
@@ -41,15 +41,15 @@ __global__ void spmv_csr_tiled_shared_kernel(
             }
         }
 
-        // 内存屏障：确保所有线程都完成了搬运，x_shared 现在是可用的
+
         __syncthreads();
 
-        // 2. 局部计算
+
         if (row < num_rows) {
             int start = row_ptr[row];
             int end = row_ptr[row + 1];
 
-            // 每个线程扫描自己的行，只处理落在当前 Tile 范围内的非零元
+
             for (int i = start + lane_id; i < end; i += 32) {
                 int col = col_indices[i];
                 if (col >= tile_start && col < tile_start + TILE_SIZE) {
@@ -58,11 +58,11 @@ __global__ void spmv_csr_tiled_shared_kernel(
             }
         }
 
-        // 再次同步：确保所有线程都算完了，才能让下一轮循环覆盖 x_shared
+
         __syncthreads();
     }
 
-    // 3. 最终规约与写回 (Warp Shuffle Reduction)
+    // 3. Warp Shuffle Reduction
     if (row < num_rows) {
         for (int offset = 16; offset > 0; offset /= 2) {
             row_sum += __shfl_down_sync(0xffffffff, row_sum, offset);
@@ -73,7 +73,7 @@ __global__ void spmv_csr_tiled_shared_kernel(
     }
 }
 
-// --- CPU 验证函数 ---
+
 void spmv_cpu(int M, const int* row_ptr, const int* col_indices, const float* values, const float* x, float* y) {
     for (int i = 0; i < M; ++i) {
         double sum = 0;
@@ -85,8 +85,7 @@ void spmv_cpu(int M, const int* row_ptr, const int* col_indices, const float* va
 }
 
 int main() {
-    // 你可以修改 M 的大小来测试不同尺度的性能。
-    // 当 M 非常大（如 50000+）且随机性强时，V5 的优势才会体现
+
     const int M = 30000; 
     const int avg_nnz = 128;
     const int NNZ = M * avg_nnz;
@@ -98,7 +97,7 @@ int main() {
     std::vector<float> h_y_cpu(M, 0.0f);
     std::vector<float> h_y_gpu(M, 0.0f);
 
-    // 随机生成矩阵数据
+
     srand(42);
     for (int i = 0; i < M; i++) {
         h_row_ptr[i] = i * avg_nnz;
@@ -110,7 +109,7 @@ int main() {
     }
     h_row_ptr[M] = NNZ;
 
-    // Device 内存分配
+
     int *d_row_ptr, *d_col_indices;
     float *d_values, *d_x, *d_y;
     cudaMalloc(&d_row_ptr, (M + 1) * sizeof(int));
@@ -124,12 +123,12 @@ int main() {
     cudaMemcpy(d_values, h_values.data(), NNZ * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_x, h_x.data(), M * sizeof(float), cudaMemcpyHostToDevice);
 
-    // 计时
+
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    dim3 block(256); // 8 个 Warp
+    dim3 block(256); 
     dim3 grid((M + (block.x / 32) - 1) / (block.x / 32));
 
     cudaEventRecord(start);
