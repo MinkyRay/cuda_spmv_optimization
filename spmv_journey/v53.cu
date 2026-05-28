@@ -6,8 +6,6 @@
 #include <iomanip>
 
 #define TILE_SIZE 1024
-
-// --- V5-Pro Kernel: 引入 Early Exit 优化 ---
 __global__ void spmv_csr_tiled_sorted_kernel(int num_rows, int num_cols, int *row_ptr, int *col_indices, float *values, float *x, float *y) {
     __shared__ float x_shared[TILE_SIZE];
 
@@ -17,14 +15,14 @@ __global__ void spmv_csr_tiled_sorted_kernel(int num_rows, int num_cols, int *ro
     float row_sum = 0.0f;
 
     for (int tile_start = 0; tile_start < num_cols; tile_start += TILE_SIZE) {
-        // 1. 协作搬运 (合并访问)
+
         for (int i = threadIdx.x; i < TILE_SIZE; i += blockDim.x) {
             int idx = tile_start + i;
             x_shared[i] = (idx < num_cols) ? x[idx] : 0.0f;
         }
         __syncthreads();
 
-        // 2. 局部计算 (带 Early Exit)
+
         if (row < num_rows) {
             int start = row_ptr[row];
             int end = row_ptr[row + 1];
@@ -32,13 +30,12 @@ __global__ void spmv_csr_tiled_sorted_kernel(int num_rows, int num_cols, int *ro
             for (int i = start + lane_id; i < end; i += 32) {
                 int col = col_indices[i];
                 
-                // --- 核心优化：有序性判定 ---
-                // 如果当前列索引已经超出了 Tile 范围，后面一定也超出了，直接跳出
+
                 if (col >= tile_start + TILE_SIZE) {
                     break; 
                 }
                 
-                // 只有在当前 Tile 范围内的才累加
+
                 if (col >= tile_start) {
                     row_sum += values[i] * x_shared[col - tile_start];
                 }
@@ -47,7 +44,7 @@ __global__ void spmv_csr_tiled_sorted_kernel(int num_rows, int num_cols, int *ro
         __syncthreads();
     }
 
-    // 3. 规约与写回
+
     if (row < num_rows) {
         for (int offset = 16; offset > 0; offset /= 2) 
             row_sum += __shfl_down_sync(0xffffffff, row_sum, offset);
@@ -55,7 +52,7 @@ __global__ void spmv_csr_tiled_sorted_kernel(int num_rows, int num_cols, int *ro
     }
 }
 
-// --- 自动化测试逻辑 ---
+
 void run_benchmark_pro(int M) {
     const int avg_nnz = 128;
     const int NNZ = M * avg_nnz;
@@ -64,17 +61,17 @@ void run_benchmark_pro(int M) {
     std::vector<int> h_col_indices(NNZ);
     std::vector<float> h_values(NNZ), h_x(M);
     
-    // 初始化数据
+
     for (int i = 0; i < M; i++) {
         h_row_ptr[i] = i * avg_nnz;
         h_x[i] = 1.0f;
         
-        // 先生成随机列
+
         std::vector<std::pair<int, float>> temp_row;
         for (int j = 0; j < avg_nnz; j++) {
             temp_row.push_back({rand() % M, 1.0f});
         }
-        // --- 关键：在 Host 端对每一行进行排序 ---
+
         std::sort(temp_row.begin(), temp_row.end());
         
         for (int j = 0; j < avg_nnz; j++) {
