@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
-# 整理实验数据
 '''
 data = {
     'Row_Len': [4, 4, 4, 4, 4, 8, 8, 8, 8, 8, 16, 16, 16, 16, 16, 
@@ -26,7 +25,7 @@ data = {
 
 df = pd.DataFrame(data)
 
-# 绘制折线图：观察不同行长下 SWS 的敏感度
+
 plt.figure(figsize=(12, 7))
 sns.set_style("whitegrid")
 sns.lineplot(data=df, x='SubWarp', y='GFLOPS', hue='Row_Len', marker='o', palette='viridis')
@@ -40,7 +39,6 @@ plt.legend(title='Row Length', bbox_to_anchor=(1.05, 1), loc='upper left')
 plt.tight_layout()
 plt.show()
 
-# 绘制热力图：寻找最优配置区域
 pivot_df = df.pivot(index="Row_Len", columns="SubWarp", values="GFLOPS")
 plt.figure(figsize=(10, 6))
 sns.heatmap(pivot_df, annot=True, fmt=".1f", cmap="YlGnBu")
